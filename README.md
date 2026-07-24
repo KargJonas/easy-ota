@@ -29,8 +29,8 @@ Everything is a plain Arduino sketch that includes the EasyOTA library.
   serial-flashed into `ota_0` when a board is first commissioned so it is
   reachable over HTTP from day one. Afterwards it's an ordinary slot
   occupant. Later uploads overwrite it.
-- **`app/`**: demo app / template. Any Arduino firmware works, as long as it
-  includes EasyOTA so it stays updatable.
+- **`examples/`**: demo apps / templates (e.g. `examples/clocks/`). Any
+  Arduino firmware works, as long as it includes EasyOTA so it stays updatable.
 
 ### Safe flashing
 
@@ -109,7 +109,7 @@ and are reported in `/easy-ota/status` (and on the GUI):
 ### Verified flashing: flash.sh
 
 ```sh
-app/flash.sh [host] [firmware.bin]   # exit 0: uploaded build verifiably running
+examples/clocks/flash.sh [host] [firmware.bin]   # exit 0: uploaded build verifiably running
 ```
 
 Without a host it discovers boards via mDNS and asks which to
@@ -193,6 +193,53 @@ SHA prefix, running partition) for IP-less discovery:
 avahi-browse -rt _easyota._tcp
 ```
 
+## Using EasyOTA in another project
+
+EasyOTA ships two ways from the same sources - pick whichever suits the
+consuming project:
+
+**1. Multi-file library** (`lib/EasyOTA/`, canonical). Best for PlatformIO:
+`library.json` declares the AsyncTCP / ESPAsyncWebServer deps, so PlatformIO
+resolves them automatically. Point at it however you consume libraries, e.g.
+
+```ini
+lib_deps = https://github.com/KargJonas/easy-ota.git
+build_flags = -DEASYOTA_USE_ETH        ; or -DEASYOTA_USE_WIFI
+```
+
+**2. Single header** (`single-header/EasyOTA.h`, generated). Best for the
+Arduino IDE or any drop-in with no library manager. It's an
+[stb-style](https://github.com/nothings/stb) amalgamation: declarations are
+always visible, and the implementation compiles only where you ask for it.
+
+```cpp
+#define EASYOTA_IMPLEMENTATION   // in EXACTLY ONE .cpp/.ino, before the include
+#include "EasyOTA.h"
+```
+
+A header can't inline the heavy deps, so they still have to be present. The
+Arduino IDE has the framework libs on the path already - just install
+ESPAsyncWebServer + AsyncTCP and go. Under PlatformIO the impl-side includes
+sit behind the `EASYOTA_IMPLEMENTATION` guard where the dependency finder
+can't see them, so name them explicitly (verified minimal set):
+
+```ini
+lib_deps =
+    esp32async/AsyncTCP
+    esp32async/ESPAsyncWebServer
+    ESPmDNS
+    Update
+    Preferences
+    Ethernet        ; only for -DEASYOTA_USE_ETH; omit on WiFi builds
+```
+
+The header is a build artifact - never edit it by hand. Edit the sources under
+`lib/EasyOTA/src/` and regenerate so the two forms can't drift:
+
+```sh
+python3 tools/amalgamate.py
+```
+
 ## Base image: build + initial serial flash (once per board)
 
 ```sh
@@ -207,7 +254,7 @@ boots `ota_0`, where the base image lands) + the base image.
 ## App: build + upload over HTTP
 
 ```sh
-cd app
+cd examples/clocks
 ./flash.sh                        # builds (asks which env), discovers, uploads
 ```
 
